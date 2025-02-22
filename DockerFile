@@ -1,27 +1,45 @@
-# Dockerfile
-# Use an official Python runtime as a parent image.
+# Use an official Python slim image as base
 FROM python:3.9-slim
 
-# Install necessary system dependencies including Google Chrome and chromedriver.
-RUN apt-get update && apt-get install -y wget gnupg unzip \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google.list \
-    && apt-get update && apt-get install -y google-chrome-stable \
-    && LATEST=$(wget -q -O - https://chromedriver.storage.googleapis.com/LATEST_RELEASE) \
-    && wget -q "https://chromedriver.storage.googleapis.com/${LATEST}/chromedriver_linux64.zip" \
-    && unzip chromedriver_linux64.zip -d /usr/local/bin/ \
-    && rm chromedriver_linux64.zip \
-    && apt-get purge -y --auto-remove wget gnupg unzip
+# Install dependencies required for downloading and installing Chrome,
+# plus runtime dependencies for Chrome
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    unzip \
+    libnss3 \
+    libxss1 \
+    libappindicator3-1 \
+    fonts-liberation \
+    libgbm1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory to /app.
+# Set the desired Chrome version
+ENV CHROME_VERSION=114.0.5735.133-1
+ENV CHROME_DEB=google-chrome-stable_${CHROME_VERSION}_amd64.deb
+
+# Download the specific version of Google Chrome from Google's deb pool.
+# (Ensure this URL is still valid; if not, update with a trusted mirror.)
+RUN wget -O ${CHROME_DEB} "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/${CHROME_DEB}" && \
+    dpkg -i ${CHROME_DEB} || apt-get install -fy && \
+    rm ${CHROME_DEB}
+
+# (Optional) Install additional tools if needed (e.g., for debugging)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Set the working directory in the container
 WORKDIR /app
 
-# Copy the dependencies file and install Python dependencies.
+# Copy Python dependencies and install them
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code.
+# Copy the rest of the application code
 COPY . .
 
-# Expose port 3000 and run the application.
+# Expose port 3000 for the FastAPI app
+EXPOSE 3000
+
+# Run the application using uvicorn
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "3000"]
