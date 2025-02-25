@@ -118,7 +118,7 @@ def join_meeting(meeting_url: str, session_id: str):
                 EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Your name"]'))
             )
             name_input.clear()
-            name_input.send_keys("Arnav Bot")
+            name_input.send_keys("Oracia")
             logger.info("Entered the display name: Arnav Bot")
 
             # 2) Click "Ask to join" button
