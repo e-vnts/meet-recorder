@@ -21,28 +21,36 @@ logger = logging.getLogger(__name__)
 def handle_popups(driver, logger=None, timeout=3):
     """
     Looks for common pop-ups or info boxes in Google Meet
-    and dismisses them if present.
+    and dismisses them if present. Adjust XPaths or text as needed.
     """
     if logger is None:
         import logging
         logger = logging.getLogger(__name__)
-    
-    # List of (XPATH, description) pairs for popups to dismiss
+
+    # Add additional selectors for the new popup
     popup_selectors = [
-        # Example: "Got it" button
         ('//span[text()="Got it"]', 'Got it'),
-        # Add other selectors as needed
+        # This will click the "Allow microphone and camera" button
+        # ('//span[text()="Allow microphone and camera"]', 'Allow microphone and camera'),
+        # Or, if you want to continue without mic/camera:
+        ('//span[text()="Continue without microphone and camera"]', 'Continue without microphone and camera'),
+        ('//span[text()="Continue without microphone"]', 'Continue without microphone'),
     ]
 
-    # Try each popup selector
     for xpath, desc in popup_selectors:
         try:
-            elem = WebDriverWait(driver, timeout).until(
-                EC.element_to_be_clickable((By.XPATH, xpath))
-            )
-            elem.click()
-            logger.info(f"Dismissed '{desc}' popup.")
+            # Use presence_of_element_located first to check if element exists
+            if WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.XPATH, xpath))
+            ):
+                # Then find it again to click it (to avoid stale element issues)
+                elem = driver.find_element(By.XPATH, xpath)
+                elem.click()
+                logger.info(f"Dismissed/Clicked '{desc}' popup.")
+                # Brief pause to let the UI update
+                time.sleep(0.5)
         except (NoSuchElementException, TimeoutException):
+            # If that particular element isn't found quickly, move on
             pass
         except Exception as e:
             logger.warning(f"Could not dismiss '{desc}' popup: {e}")
