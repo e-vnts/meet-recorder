@@ -1,8 +1,37 @@
+# Google Meet Recording Bot with API
 
+This service provides a REST API for controlling a headless Chrome browser that can join and record Google Meet sessions.
 
-# My Meeting Bot
+## Features
 
-This project allows you to join multiple Google Meet or Zoom meetings concurrently using Selenium and undetected‑chromedriver, exposing REST endpoints via FastAPI. This Docker setup installs Google Chrome version 114, which is required to work with the specific version of undetected‑chromedriver in use.
+- Join Google Meet sessions using API endpoints
+- Record audio and video from meetings
+- Control multiple concurrent meeting sessions
+- Monitor session status and recording progress
+- Support for both headless and visible browser modes
+
+## Requirements
+
+- Python 3.8+
+- Chrome or Chromium browser
+- Xvfb for headless display
+- FFmpeg for recording
+- PulseAudio for audio capture
+
+## Installation
+
+1. Install system dependencies:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y xvfb pulseaudio ffmpeg
+   ```
+
+2. Install Python dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ## Folder Structure
 

@@ -62,7 +62,7 @@ record_path = os.environ.get("RECORDING_PATH", "recordings/output.mp4")
 display_num = os.environ.get("DISPLAY_NUM", "99")
 screen_res = os.environ.get("SCREEN_RESOLUTION", "1280x720")
 screen_depth = os.environ.get("SCREEN_DEPTH", "24")
-display_name = os.environ.get("DISPLAY_NAME", "WSLBot")  # Name to use if joining as guest
+display_name = os.environ.get("DISPLAY_NAME", "Oracia")  # Name to use if joining as guest
 
 # Chrome configuration
 chrome_path = os.environ.get("CHROME_BINARY")  # Optional custom Chrome binary path

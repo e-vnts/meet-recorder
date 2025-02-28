@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  meeting-bot:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./recordings:/app/recordings
+    environment:
+      - DISPLAY=:99
+    restart: unless-stopped

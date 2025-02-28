@@ -1,15 +1,19 @@
 # controllers/meeting_controller.py
 # Defines REST endpoints for joining a meeting, checking status, and leaving a meeting.
 import logging
+import os
 import uuid
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Path
+from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 from utils import session_store
 from services import google_meet_bot, zoom_bot
+from models.meeting import MeetingRequest, MeetingResponse, MeetingStatusResponse, MeetingListResponse, MeetingStatus
+from services.meet_service import MeetService
 
+router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 logger = logging.getLogger(__name__)
-router = APIRouter()
 
 # Pydantic models for request validation.
 class JoinRequest(BaseModel):
@@ -88,3 +92,102 @@ async def leave_meeting(leave_request: LeaveRequest):
     session_store.remove_session(leave_request.sessionId)
     logger.info(f"Session {leave_request.sessionId} has been closed and removed.")
     return {"sessionId": leave_request.sessionId, "status": "left"}
+
+@router.post("/", response_model=MeetingResponse)
+async def start_meeting(request: MeetingRequest):
+    """Start a new meeting recording session"""
+    try:
+        # Ensure the recording directory exists
+        os.makedirs(os.path.dirname(request.record_path), exist_ok=True)
+        
+        # Start the meeting
+        session_id = MeetService.start_meeting(
+            meet_link=str(request.meet_link),
+            display_name=request.display_name,
+            record_path=request.record_path,
+            screen_resolution=request.screen_resolution,
+            show_browser=request.show_browser,
+            **(request.additional_options or {})
+        )
+        
+        return MeetingResponse(
+            session_id=session_id,
+            status=MeetingStatus.PENDING,
+            message="Meeting session started successfully"
+        )
+    
+    except Exception as e:
+        logger.exception(f"Error starting meeting: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start meeting: {str(e)}")
+
+@router.get("/{session_id}", response_model=MeetingStatusResponse)
+async def get_meeting_status(session_id: str = Path(..., description="Meeting session ID")):
+    """Get the current status of a meeting session"""
+    try:
+        status = MeetService.get_meeting_status(session_id)
+        
+        if status.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=f"Meeting session {session_id} not found")
+        
+        return MeetingStatusResponse(
+            session_id=session_id,
+            status=status.get("status"),
+            recording_path=status.get("record_path"),
+            duration=status.get("duration"),
+            error=status.get("error")
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting meeting status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get meeting status: {str(e)}")
+
+@router.post("/{session_id}/stop", response_model=MeetingStatusResponse)
+async def stop_meeting(session_id: str = Path(..., description="Meeting session ID")):
+    """Stop a meeting recording session"""
+    try:
+        success = MeetService.stop_meeting(session_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Meeting session {session_id} not found or already stopped")
+        
+        # Get updated status
+        status = MeetService.get_meeting_status(session_id)
+        
+        return MeetingStatusResponse(
+            session_id=session_id,
+            status=status.get("status"),
+            recording_path=status.get("record_path"),
+            duration=status.get("duration"),
+            error=status.get("error")
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error stopping meeting: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop meeting: {str(e)}")
+
+@router.get("/", response_model=MeetingListResponse)
+async def list_meetings():
+    """List all active meeting sessions"""
+    try:
+        meetings = MeetService.get_all_meetings()
+        
+        # Convert to required format
+        result = {}
+        for session_id, meeting_data in meetings.items():
+            result[session_id] = MeetingStatusResponse(
+                session_id=session_id,
+                status=meeting_data.get("status"),
+                recording_path=meeting_data.get("record_path"),
+                duration=meeting_data.get("duration"),
+                error=meeting_data.get("error")
+            )
+            
+        return MeetingListResponse(sessions=result)
+    
+    except Exception as e:
+        logger.exception(f"Error listing meetings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list meetings: {str(e)}")
