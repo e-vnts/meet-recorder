@@ -75,11 +75,11 @@ user_data_dir = os.environ.get("CHROME_USER_DATA_DIR", "/tmp/meet_bot_profile")
 
 # SHOW_BROWSER environment variable:
 # Set to "true" if you want the browser window visible.
-show_browser = os.environ.get("SHOW_BROWSER", "true").lower() in ("true", "1", "yes")
+show_browser = True
 
 # NO_XVFB environment variable:
 # Set to "1" (or "true") to disable Xvfb entirely and use an existing (visible) X server.
-no_xvfb = os.environ.get("NO_XVFB", "0").lower() in ("1", "true", "yes")
+no_xvfb = False
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
