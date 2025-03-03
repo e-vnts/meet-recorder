@@ -34,7 +34,12 @@ def stopScript():
     logging.info("current_directory" + current_directory)
     if ffmpeg_process:
         try:
-            ffmpeg_process.communicate(input=b"q", timeout=5)
+            try:
+                ffmpeg_process.communicate(input=b"q", timeout=5)
+                logging.info("FFmpeg stopped gracefully.")
+            except Exception as e:
+                logging.warning(f"FFmpeg did not stop gracefully: {e}")
+                ffmpeg_process.kill()
             logging.info("FFmpeg stopped gracefully in stopScript.")
             
             # After successful recording completion, upload the video
