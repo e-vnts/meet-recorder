@@ -290,6 +290,9 @@ logger.info("Flask endpoint for internal stop is running on port 5001.")
 # --- Start FFmpeg recording (video + audio) ---
 ffmpeg_process = None
 display_used = os.environ.get("DISPLAY", f":{display_num}")
+os.makedirs(os.path.dirname(record_path), exist_ok=True)
+
+
 if "headless" in options.arguments:
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-nostats",
@@ -298,6 +301,26 @@ if "headless" in options.arguments:
     ]
     logger.warning("Headless mode active; recording only audio.")
 else:
+    # Log and create the record output file if it doesn't exist
+    if os.path.exists(record_path):
+        logging.info("Record output file already exists: %s", record_path)
+    else:
+        with open(record_path, "w") as f:
+            pass
+        logging.info("Created new record output file: %s", record_path)
+
+    # Check if the file is currently locked (e.g. being recorded)
+    try:
+        fd = open(record_path, "r+")
+        # Try acquiring an exclusive non-blocking lock
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Release the lock immediately
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        fd.close()
+    except BlockingIOError:
+        logging.info("The file %s appears to be currently in use (locked)", record_path)
+
+    # Build the ffmpeg command
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-nostats",
         "-f", "x11grab",
