@@ -303,18 +303,18 @@ if "headless" in options.arguments:
     logger.warning("Headless mode active; recording only audio.")
 else:
     if os.path.exists(record_path):
-    logger.info("Record output file already exists.")
-    # Check if any running ffmpeg process is using the record file.
-    for proc in psutil.process_iter(attrs=["cmdline"]):
-        cmdline = proc.info.get("cmdline", [])
-        if cmdline and "ffmpeg" in cmdline[0] and record_path in ' '.join(cmdline):
-            logger.info("The record output file is currently being recorded.")
-            break
-else:
-    # Create the file before recording
-    with open(record_path, 'w') as f:
-        pass
-    logger.info("Created the record output file.")
+        logger.info("Record output file already exists.")
+        # Check if any running ffmpeg process is using the record file.
+        for proc in psutil.process_iter(attrs=["cmdline"]):
+            cmdline = proc.info.get("cmdline", [])
+            if cmdline and "ffmpeg" in cmdline[0] and record_path in ' '.join(cmdline):
+                logger.info("The record output file is currently being recorded.")
+                break
+    else:
+        # Create the file before recording
+        with open(record_path, 'w') as f:
+            pass
+        logger.info("Created the record output file.")
 
 # Now build the ffmpeg command.
 ffmpeg_cmd = [
