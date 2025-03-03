@@ -4,6 +4,7 @@ import logging
 import subprocess
 import threading
 import sys
+import requests  # Add this import for HTTP requests
 
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -33,9 +34,52 @@ def stopScript():
         try:
             ffmpeg_process.communicate(input=b"q", timeout=5)
             logging.info("FFmpeg stopped gracefully in stopScript.")
+            
+            # After successful recording completion, upload the video
+            try:
+                # Get the upload server URL from environment or use a default
+                upload_server_url = "https://rw.debatesacademy.com"
+                session_id = os.environ.get("SESSION_ID", "default-session")
+                
+                logging.info(f"Uploading recording to {upload_server_url} with session ID: {session_id}")
+                
+                # Step 1: Get a signed URL for upload
+                response = requests.post(
+                    f"{upload_server_url}/recording-worker/record/upload-video",
+                    json={"sessionId":session_id}
+                    
+                )
+                response.raise_for_status()  # Raise an exception for HTTP errors
+                
+                upload_data = response.json()
+                signed_url = upload_data.get("signedUrl")
+                
+                logging.info(f"Received signed URL {signed_url}")
+                
+                # Step 2: Upload the video file using the signed URL
+                with open(record_path, "rb") as video_file:
+                    video_data = video_file.read()
+                    upload_response = requests.put(
+                        signed_url,
+                        data=video_data,
+                        headers={"Content-Type": "video/mp4"}
+                    )
+                    upload_response.raise_for_status()
+                
+                logging.info(f"Successfully uploaded recording to {upload_server_url}")
+                
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Error during upload: {e}")
+            except IOError as e:
+                logging.error(f"Error reading video file: {e}")
+            except Exception as e:
+                logging.error(f"Unexpected error during upload: {e}")
+                
         except Exception as e:
             logging.warning(f"FFmpeg did not stop gracefully in stopScript: {e}")
             ffmpeg_process.kill()
+    
+    # Continue with the original cleanup
     if driver:
         driver.quit()
         logging.info("Chrome WebDriver closed in stopScript.")
@@ -282,9 +326,9 @@ finally:
     if ffmpeg_process:
         try:
             ffmpeg_process.communicate(input=b"q", timeout=5)
-            logger.info("FFmpeg stopped gracefully.")
+            logging.info("FFmpeg stopped gracefully.")
         except Exception as e:
-            logger.warning(f"FFmpeg did not stop gracefully: {e}")
+            logging.warning(f"FFmpeg did not stop gracefully: {e}")
             ffmpeg_process.kill()
     if driver:
         driver.quit()
