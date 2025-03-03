@@ -320,14 +320,15 @@ else:
 ffmpeg_cmd = [
     "ffmpeg", "-y", "-nostats",
     "-f", "x11grab",
-    "-video_size", f"{width}x{height}",
+    "-video_size", "1280x720",  # fixed 16:9 resolution
     "-i", f"{display_used}.0",
     "-f", "pulse",
     "-i", "default",
-    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-b:a", "128k",
+    "-c:v", "libx264", "-preset", "ultrafast", "-b:v", "250k", "-pix_fmt", "yuv420p",  # lower video quality
+    "-c:a", "aac", "-b:a", "320k",  # high audio quality
     "-r", "25", record_path
 ]
+
 try:
     logger.info("Launching FFmpeg for screen and audio recording...")
     ffmpeg_process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
