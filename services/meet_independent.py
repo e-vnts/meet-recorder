@@ -15,10 +15,37 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 # --- New imports for HTTP endpoint ---
 from flask import Flask, request, jsonify
 
+# --- Global variable for cleanup ---
+already_stopped = False
+
+# --- Define cleanup function before its usage in the HTTP endpoint ---
+def stopScript():
+    """
+    Cleanup function to stop FFmpeg, close Chrome, and kill Xvfb.
+    This function is called when a stop signal is received.
+    """
+    global already_stopped
+    if already_stopped:
+        return
+    already_stopped = True
+    logging.info("Executing stopScript cleanup...")
+    if ffmpeg_process:
+        try:
+            ffmpeg_process.communicate(input=b"q", timeout=5)
+            logging.info("FFmpeg stopped gracefully in stopScript.")
+        except Exception as e:
+            logging.warning(f"FFmpeg did not stop gracefully in stopScript: {e}")
+            ffmpeg_process.kill()
+    if driver:
+        driver.quit()
+        logging.info("Chrome WebDriver closed in stopScript.")
+    if xvfb_proc:
+        xvfb_proc.kill()
+        logging.info("Xvfb process terminated in stopScript.")
+
 # --- Flask app and termination event for graceful shutdown ---
 app = Flask(__name__)
 stop_event = threading.Event()
-already_stopped = False  # To ensure cleanup happens only once
 
 @app.route('/internal_stop', methods=['POST'])
 def internal_stop():
@@ -26,7 +53,6 @@ def internal_stop():
     logging.info("Received internal stop request via HTTP endpoint.")
     if not already_stopped:
         stopScript()  # Call the cleanup function
-        already_stopped = True
     stop_event.set()  # Signal main loop to exit
     return jsonify({"message": "Stop signal processed."}), 200
 
@@ -266,27 +292,3 @@ finally:
     if xvfb_proc:
         xvfb_proc.kill()
         logger.info("Xvfb process terminated.")
-
-def stopScript():
-    """
-    Cleanup function to stop FFmpeg, close Chrome, and kill Xvfb.
-    This function is called when a stop signal is received.
-    """
-    global already_stopped
-    if already_stopped:
-        return
-    already_stopped = True
-    logger.info("Executing stopScript cleanup...")
-    if ffmpeg_process:
-        try:
-            ffmpeg_process.communicate(input=b"q", timeout=5)
-            logger.info("FFmpeg stopped gracefully in stopScript.")
-        except Exception as e:
-            logger.warning(f"FFmpeg did not stop gracefully in stopScript: {e}")
-            ffmpeg_process.kill()
-    if driver:
-        driver.quit()
-        logger.info("Chrome WebDriver closed in stopScript.")
-    if xvfb_proc:
-        xvfb_proc.kill()
-        logger.info("Xvfb process terminated in stopScript.")
