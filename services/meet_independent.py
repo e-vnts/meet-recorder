@@ -4,7 +4,7 @@ import logging
 import subprocess
 import threading
 import sys
-import requests  # Add this import for HTTP requests
+import requests  # HTTP requests
 
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -16,8 +16,11 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 # --- New imports for HTTP endpoint ---
 from flask import Flask, request, jsonify
 
-# --- Global variable for cleanup ---
+# --- Global variables for cleanup and process handles ---
 already_stopped = False
+ffmpeg_process = None
+driver = None
+xvfb_proc = None
 
 # --- Define cleanup function before its usage in the HTTP endpoint ---
 def stopScript():
@@ -25,55 +28,58 @@ def stopScript():
     Cleanup function to stop FFmpeg, close Chrome, and kill Xvfb.
     This function is called when a stop signal is received.
     """
-    global already_stopped
+    global already_stopped, ffmpeg_process, driver, xvfb_proc
     if already_stopped:
         return
     already_stopped = True
     logging.info("Executing stopScript cleanup...")
+
     if ffmpeg_process:
         try:
             ffmpeg_process.communicate(input=b"q", timeout=5)
             logging.info("FFmpeg stopped gracefully in stopScript.")
             
-            # After successful recording completion, upload the video
-            try:
-                # Get the upload server URL from environment or use a default
-                upload_server_url = "https://rw.debatesacademy.com"
-                session_id = os.environ.get("SESSION_ID", "default-session")
-                
-                logging.info(f"Uploading recording to {upload_server_url} with session ID: {session_id}")
-                
-                # Step 1: Get a signed URL for upload
-                response = requests.post(
-                    f"{upload_server_url}/recording-worker/record/upload-video",
-                    json={"sessionId":session_id}
+            # After successful recording completion, upload the video if it exists
+            if os.path.exists(record_path):
+                try:
+                    # Get the upload server URL from environment or use a default
+                    upload_server_url = "https://rw.debatesacademy.com"
+                    session_id = os.environ.get("SESSION_ID", "default-session")
                     
-                )
-                response.raise_for_status()  # Raise an exception for HTTP errors
-                
-                upload_data = response.json()
-                signed_url = upload_data.get("signedUrl")
-                
-                logging.info(f"Received signed URL {signed_url}")
-                
-                # Step 2: Upload the video file using the signed URL
-                with open(record_path, "rb") as video_file:
-                    video_data = video_file.read()
-                    upload_response = requests.put(
-                        signed_url,
-                        data=video_data,
-                        headers={"Content-Type": "video/mp4"}
+                    logging.info(f"Uploading recording to {upload_server_url} with session ID: {session_id}")
+                    
+                    # Step 1: Get a signed URL for upload
+                    response = requests.post(
+                        f"{upload_server_url}/recording-worker/record/upload-video",
+                        json={"sessionId": session_id}
                     )
-                    upload_response.raise_for_status()
-                
-                logging.info(f"Successfully uploaded recording to {upload_server_url}")
-                
-            except requests.exceptions.RequestException as e:
-                logging.error(f"Error during upload: {e}")
-            except IOError as e:
-                logging.error(f"Error reading video file: {e}")
-            except Exception as e:
-                logging.error(f"Unexpected error during upload: {e}")
+                    response.raise_for_status()  # Raise an exception for HTTP errors
+                    
+                    upload_data = response.json()
+                    signed_url = upload_data.get("signedUrl")
+                    
+                    logging.info(f"Received signed URL {signed_url}")
+                    
+                    # Step 2: Upload the video file using the signed URL
+                    with open(record_path, "rb") as video_file:
+                        video_data = video_file.read()
+                        upload_response = requests.put(
+                            signed_url,
+                            data=video_data,
+                            headers={"Content-Type": "video/mp4"}
+                        )
+                        upload_response.raise_for_status()
+                    
+                    logging.info(f"Successfully uploaded recording to {upload_server_url}")
+                    
+                except requests.exceptions.RequestException as e:
+                    logging.error(f"Error during upload: {e}")
+                except IOError as e:
+                    logging.error(f"Error reading video file: {e}")
+                except Exception as e:
+                    logging.error(f"Unexpected error during upload: {e}")
+            else:
+                logging.error(f"Recording file {record_path} does not exist. Skipping upload.")
                 
         except Exception as e:
             logging.warning(f"FFmpeg did not stop gracefully in stopScript: {e}")
@@ -164,7 +170,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 logger.info("Starting Google Meet recorder bot...")
 
-os.makedirs(os.path.dirname(record_path), exist_ok=True)
+# Create the recording directory if it doesn't exist.
+try:
+    os.makedirs(os.path.dirname(record_path), exist_ok=True)
+except Exception as e:
+    logger.error(f"Failed to create directory for recording: {e}")
 
 try:
     width, height = map(int, screen_res.split('x'))
