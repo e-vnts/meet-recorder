@@ -5,6 +5,7 @@ import subprocess
 import threading
 import sys
 import requests  # Add this import for HTTP requests
+import psutil
 
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -301,37 +302,32 @@ if "headless" in options.arguments:
     ]
     logger.warning("Headless mode active; recording only audio.")
 else:
-    # Log and create the record output file if it doesn't exist
     if os.path.exists(record_path):
-        logging.info("Record output file already exists: %s", record_path)
-    else:
-        with open(record_path, "w") as f:
-            pass
-        logging.info("Created new record output file: %s", record_path)
+    logger.info("Record output file already exists.")
+    # Check if any running ffmpeg process is using the record file.
+    for proc in psutil.process_iter(attrs=["cmdline"]):
+        cmdline = proc.info.get("cmdline", [])
+        if cmdline and "ffmpeg" in cmdline[0] and record_path in ' '.join(cmdline):
+            logger.info("The record output file is currently being recorded.")
+            break
+else:
+    # Create the file before recording
+    with open(record_path, 'w') as f:
+        pass
+    logger.info("Created the record output file.")
 
-    # Check if the file is currently locked (e.g. being recorded)
-    try:
-        fd = open(record_path, "r+")
-        # Try acquiring an exclusive non-blocking lock
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # Release the lock immediately
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        fd.close()
-    except BlockingIOError:
-        logging.info("The file %s appears to be currently in use (locked)", record_path)
-
-    # Build the ffmpeg command
-    ffmpeg_cmd = [
-        "ffmpeg", "-y", "-nostats",
-        "-f", "x11grab",
-        "-video_size", f"{width}x{height}",
-        "-i", f"{display_used}.0",
-        "-f", "pulse",
-        "-i", "default",
-        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k",
-        "-r", "25", record_path
-    ]
+# Now build the ffmpeg command.
+ffmpeg_cmd = [
+    "ffmpeg", "-y", "-nostats",
+    "-f", "x11grab",
+    "-video_size", f"{width}x{height}",
+    "-i", f"{display_used}.0",
+    "-f", "pulse",
+    "-i", "default",
+    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "128k",
+    "-r", "25", record_path
+]
 try:
     logger.info("Launching FFmpeg for screen and audio recording...")
     ffmpeg_process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
