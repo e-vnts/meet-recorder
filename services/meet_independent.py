@@ -31,7 +31,7 @@ def stopScript():
     already_stopped = True
     logging.info("Executing stopScript cleanup...")
     current_directory = os.getcwd()
-    print("current_directory" + current_directory)
+    logging.info("current_directory" + current_directory)
     if ffmpeg_process:
         try:
             ffmpeg_process.communicate(input=b"q", timeout=5)
