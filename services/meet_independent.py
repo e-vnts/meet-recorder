@@ -3,6 +3,7 @@ import time
 import logging
 import subprocess
 import threading
+import sys
 
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -11,6 +12,29 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 
+# --- New imports for HTTP endpoint ---
+from flask import Flask, request, jsonify
+
+# --- Flask app and termination event for graceful shutdown ---
+app = Flask(__name__)
+stop_event = threading.Event()
+already_stopped = False  # To ensure cleanup happens only once
+
+@app.route('/internal_stop', methods=['POST'])
+def internal_stop():
+    global already_stopped
+    logging.info("Received internal stop request via HTTP endpoint.")
+    if not already_stopped:
+        stopScript()  # Call the cleanup function
+        already_stopped = True
+    stop_event.set()  # Signal main loop to exit
+    return jsonify({"message": "Stop signal processed."}), 200
+
+def run_flask():
+    # Run the Flask app; debug is off and use_reloader is disabled for thread safety.
+    app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
+
+# --- Existing configuration and setup ---
 def handle_popups(driver, logger=None, timeout=3):
     """
     Looks for common pop-ups or info boxes in Google Meet
@@ -20,30 +44,22 @@ def handle_popups(driver, logger=None, timeout=3):
         import logging
         logger = logging.getLogger(__name__)
 
-    # Add additional selectors for the new popup
     popup_selectors = [
         ('//span[text()="Got it"]', 'Got it'),
-        # This will click the "Allow microphone and camera" button
-        # ('//span[text()="Allow microphone and camera"]', 'Allow microphone and camera'),
-        # Or, if you want to continue without mic/camera:
         ('//span[text()="Continue without microphone and camera"]', 'Continue without microphone and camera'),
         ('//span[text()="Continue without microphone"]', 'Continue without microphone'),
     ]
 
     for xpath, desc in popup_selectors:
         try:
-            # Use presence_of_element_located first to check if element exists
             if WebDriverWait(driver, timeout).until(
                 EC.presence_of_element_located((By.XPATH, xpath))
             ):
-                # Then find it again to click it (to avoid stale element issues)
                 elem = driver.find_element(By.XPATH, xpath)
                 elem.click()
                 logger.info(f"Dismissed/Clicked '{desc}' popup.")
-                # Brief pause to let the UI update
                 time.sleep(0.5)
         except (NoSuchElementException, TimeoutException):
-            # If that particular element isn't found quickly, move on
             pass
         except Exception as e:
             logger.warning(f"Could not dismiss '{desc}' popup: {e}")
@@ -57,7 +73,6 @@ def periodic_popup_handler(driver, logger):
             logger.warning(f"Popup handler encountered an error: {e}")
             break
 
-
 # --- Configuration from environment variables ---
 meet_link = os.environ.get("GMEET_LINK")
 if not meet_link:
@@ -67,29 +82,20 @@ record_path = os.environ.get("RECORDING_PATH", "recordings/output.mp4")
 display_num = os.environ.get("DISPLAY_NUM", "99")
 screen_res = os.environ.get("SCREEN_RESOLUTION", "1280x720")
 screen_depth = os.environ.get("SCREEN_DEPTH", "24")
-display_name = os.environ.get("DISPLAY_NAME", "Oracia")  # Name to use if joining as guest
+display_name = os.environ.get("DISPLAY_NAME", "Oracia")
 
-# Chrome configuration
-chrome_path = os.environ.get("CHROME_BINARY")  # Optional custom Chrome binary path
+chrome_path = os.environ.get("CHROME_BINARY")
 user_data_dir = os.environ.get("CHROME_USER_DATA_DIR", "/tmp/meet_bot_profile")
 
-# SHOW_BROWSER environment variable:
-# Set to "true" if you want the browser window visible.
 show_browser = True
-
-# NO_XVFB environment variable:
-# Set to "1" (or "true") to disable Xvfb entirely and use an existing (visible) X server.
 no_xvfb = False
 
-# Logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-logger.info("Starting Google Meet recorder bot on WSL...")
+logger.info("Starting Google Meet recorder bot...")
 
-# Ensure the output directory exists
 os.makedirs(os.path.dirname(record_path), exist_ok=True)
 
-# Parse screen resolution
 try:
     width, height = map(int, screen_res.split('x'))
 except Exception as e:
@@ -108,19 +114,18 @@ if not no_xvfb:
     try:
         logger.info(f"Launching Xvfb on display {display_env} with resolution {width}x{height}x{depth}...")
         xvfb_proc = subprocess.Popen(xvfb_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        time.sleep(1)  # Allow Xvfb to initialize
+        time.sleep(1)
         if xvfb_proc.poll() is not None:
             error_output = xvfb_proc.stderr.read().decode()
             logger.error(f"Xvfb failed to start. Error: {error_output.strip()}")
             logger.warning("Proceeding without Xvfb. Chrome will use the existing display.")
         else:
-            os.environ["DISPLAY"] = display_env  # Set DISPLAY for child processes
+            os.environ["DISPLAY"] = display_env
             logger.info(f"Xvfb started on display {display_env}.")
     except FileNotFoundError:
         logger.error("Xvfb not installed or not found. Proceeding without Xvfb.")
 else:
     logger.info("NO_XVFB is set; skipping Xvfb startup.")
-    # Do not override DISPLAY so that an existing display (e.g., WSLg) is used.
 
 # --- Start PulseAudio (for audio capture) ---
 pulse_server = os.environ.get("PULSE_SERVER")
@@ -150,7 +155,6 @@ options.add_argument("--disable-sync")
 options.add_argument("--disable-popup-blocking")
 options.add_argument(f"--user-data-dir={user_data_dir}")
 if not show_browser:
-    # Only add headless flag if SHOW_BROWSER is false.
     options.add_argument("--headless")
     options.add_argument("--remote-debugging-port=9222")
 options.add_argument("--use-fake-ui-for-media-stream")
@@ -201,17 +205,19 @@ except Exception as e:
 logger.info("Joined meeting (or waiting for host approval). Starting recording...")
 threading.Thread(target=periodic_popup_handler, args=(driver, logger), daemon=True).start()
 
+# --- Start Flask server in a background thread ---
+flask_thread = threading.Thread(target=run_flask, daemon=True)
+flask_thread.start()
+logger.info("Flask endpoint for internal stop is running on port 5001.")
+
 # --- Start FFmpeg recording (video + audio) ---
 ffmpeg_process = None
-# If using an external display, use the current $DISPLAY. Otherwise, use Xvfb's display.
 display_used = os.environ.get("DISPLAY", f":{display_num}")
 if "headless" in options.arguments:
-    # In headless mode, record audio only.
     ffmpeg_cmd = [
         "ffmpeg", "-y", "-nostats",
         "-f", "pulse", "-i", "default",
-        "-c:a", "aac", "-b:a", "128k",
-        record_path.replace(".mp4", "_audio.mp4")
+        "-c:a", "aac", "-b:a", "128k", record_path.replace(".mp4", "_audio.mp4")
     ]
     logger.warning("Headless mode active; recording only audio.")
 else:
@@ -224,8 +230,7 @@ else:
         "-i", "default",
         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k",
-        "-r", "25",
-        record_path
+        "-r", "25", record_path
     ]
 try:
     logger.info("Launching FFmpeg for screen and audio recording...")
@@ -238,13 +243,15 @@ except Exception as e:
         xvfb_proc.kill()
     raise
 
-logger.info("Recording in progress. Press Ctrl+C to stop.")
+logger.info("Recording in progress. Press Ctrl+C or send a POST request to /internal_stop to stop.")
 
+# --- Main loop now checks for the stop event ---
 try:
-    while True:
+    while not stop_event.is_set():
         time.sleep(1)
 except KeyboardInterrupt:
-    logger.info("Interrupt received, stopping recording...")
+    logger.info("Keyboard interrupt received, stopping recording...")
+    stop_event.set()
 finally:
     if ffmpeg_process:
         try:
@@ -259,3 +266,27 @@ finally:
     if xvfb_proc:
         xvfb_proc.kill()
         logger.info("Xvfb process terminated.")
+
+def stopScript():
+    """
+    Cleanup function to stop FFmpeg, close Chrome, and kill Xvfb.
+    This function is called when a stop signal is received.
+    """
+    global already_stopped
+    if already_stopped:
+        return
+    already_stopped = True
+    logger.info("Executing stopScript cleanup...")
+    if ffmpeg_process:
+        try:
+            ffmpeg_process.communicate(input=b"q", timeout=5)
+            logger.info("FFmpeg stopped gracefully in stopScript.")
+        except Exception as e:
+            logger.warning(f"FFmpeg did not stop gracefully in stopScript: {e}")
+            ffmpeg_process.kill()
+    if driver:
+        driver.quit()
+        logger.info("Chrome WebDriver closed in stopScript.")
+    if xvfb_proc:
+        xvfb_proc.kill()
+        logger.info("Xvfb process terminated in stopScript.")
