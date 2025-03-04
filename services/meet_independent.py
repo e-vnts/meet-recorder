@@ -320,7 +320,7 @@ else:
 ffmpeg_cmd = [
     "ffmpeg", "-y", "-nostats",
     "-f", "x11grab",
-    "-video_size", "640x320",  # fixed 16:9 resolution
+    "-video_size", "640x360",  # fixed 16:9 resolution
     "-i", f"{display_used}.0",
     "-f", "pulse",
     "-i", "default",
