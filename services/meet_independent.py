@@ -320,13 +320,13 @@ else:
 ffmpeg_cmd = [
     "ffmpeg", "-y", "-nostats",
     "-f", "x11grab",
-    "-video_size", "640x360",  # fixed 16:9 resolution
+    "-video_size", f"{width}x{height}",
     "-i", f"{display_used}.0",
     "-f", "pulse",
     "-i", "default",
-    "-c:v", "libx264", "-preset", "ultrafast", "-b:v", "100k", "-pix_fmt", "yuv420p",  # lower video quality
-    "-c:a", "aac", "-b:a", "192k",
-    "-r", "15", record_path
+    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", "128k",
+    "-r", "25", record_path
 ]
 
 try:
